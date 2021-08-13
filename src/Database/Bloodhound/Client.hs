@@ -1110,11 +1110,11 @@ searchByIndicesTemplate ixs = bindM2 dispatchSearchTemplate url . return
 
 -- | 'storeSearchTemplate', saves a 'SearchTemplateSource' to be used later.
 storeSearchTemplate :: MonadBH m => SearchTemplateId -> SearchTemplateSource -> m Reply
-storeSearchTemplate (SearchTemplateId tid) ts =
+storeSearchTemplate (SearchTemplateId tid) (SearchTemplateSource ts) =
   url >>= flip post (Just (encode json))
   where
     url = joinPath ["_scripts", tid]
-    json = Object $ HM.fromList ["script" .= Object ("lang" .= String "mustache" <> "source" .= ts) ]
+    json = Object $ HM.fromList ["script" .= Object (HM.fromList ["lang" .= String "mustache", "source" .= String ts]) ]
 
 -- | 'getSearchTemplate', get info of an stored 'SearchTemplateSource'.
 getSearchTemplate :: MonadBH m => SearchTemplateId -> m Reply 
