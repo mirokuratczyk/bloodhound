@@ -1267,9 +1267,7 @@ pitSearch indexName search = do
       closeResp <- closePointInTime $ ClosePointInTime oPitId
       case closeResp of
         Left _ -> return []
-        Right (ClosePointInTimeResponse False _) ->
-          error "failed to close point in time (PIT)"
-        Right (ClosePointInTimeResponse True _) -> return hits
+        Right _ -> return hits
 
 -- | 'mkSearch' is a helper function for defaulting additional fields of a 'Search'
 --   to Nothing in case you only care about your 'Query' and 'Filter'. Use record update
