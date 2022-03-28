@@ -65,6 +65,7 @@ module Database.Bloodhound.Client
        , getInitialSortedScroll
        , advanceScroll
        , pitSearch
+       , pitSearch'
        , openPointInTime
        , closePointInTime
        , refreshIndex
@@ -1224,21 +1225,21 @@ scanSearch indexName search = do
     return totalHits
 
 pitAccumulator
-  :: (FromJSON a, MonadBH m, MonadThrow m) => Search -> [Hit a] -> m [Hit a]
+  :: (FromJSON a, MonadBH m, MonadThrow m) => Search -> [Hit a] -> m (Either EsError [Hit a])
 pitAccumulator search oldHits = do
   resp   <- searchAll search
   parsed <- parseEsResponse resp
   case parsed of
-    Left  _            -> return []
+    Left  e            -> return $ Left e
     Right searchResult -> case hits (searchHits searchResult) of
-      []      -> return oldHits
+      []      -> return $ Right oldHits
       newHits -> case (hitSort $ last newHits, pitId searchResult) of
         (Nothing, Nothing) ->
           error "no point in time (PIT) ID or last sort value"
         (Just _       , Nothing    ) -> error "no point in time (PIT) ID"
-        (Nothing      , _     ) -> return (oldHits <> newHits)
+        (Nothing      , _     ) -> return $ Right (oldHits <> newHits)
         (Just lastSort, Just pitId') -> do
-          let newSearch = search { pointInTime = Just (PointInTime pitId' "1m")
+          let newSearch = search { pointInTime = Just (PointInTime pitId' "5m")
                                  , searchAfterKey = Just lastSort
                                  }
           pitAccumulator newSearch (oldHits <> newHits)
@@ -1262,12 +1263,29 @@ pitSearch indexName search = do
   case openResp of
     Left  _                            -> return []
     Right OpenPointInTimeResponse {..} -> do
-      let searchPIT = search { pointInTime = Just (PointInTime oPitId "1m") }
-      hits      <- pitAccumulator searchPIT []
-      closeResp <- closePointInTime $ ClosePointInTime oPitId
-      case closeResp of
+      let searchPIT = search { pointInTime = Just (PointInTime oPitId "5m") }
+      result      <- pitAccumulator searchPIT []
+      _ <- closePointInTime $ ClosePointInTime oPitId -- TODO: handle error
+      case result of
         Left _ -> return []
-        Right _ -> return hits
+        Right hits -> return hits
+
+pitSearch'
+  :: (FromJSON a, MonadBH m, MonadThrow m)
+  => IndexName
+  -> Search
+  -> m (Either EsError [Hit a])
+pitSearch' indexName search = do
+  openResp <- openPointInTime indexName
+  case openResp of
+    Left  e                            -> return $ Left e
+    Right OpenPointInTimeResponse {..} -> do
+      let searchPIT = search { pointInTime = Just (PointInTime oPitId "5m") }
+      result      <- pitAccumulator searchPIT []
+      _ <- closePointInTime $ ClosePointInTime oPitId -- TODO: handle error
+      case result of 
+        Left e -> return $ Left e
+        Right hits -> return $ Right hits
 
 -- | 'mkSearch' is a helper function for defaulting additional fields of a 'Search'
 --   to Nothing in case you only care about your 'Query' and 'Filter'. Use record update
